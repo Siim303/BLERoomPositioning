@@ -13,6 +13,11 @@ import os.log
 
 private let log = Logger(subsystem: "PDR", category: "core")
 
+struct PDRUpdate {
+    let position: CGPoint
+    let steps: Int
+}
+
 /// Pedestrian Dead Reckoning manager — step driven, heading aware
 final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     func sessionDidBecomeInactive(_ session: WCSession) {
@@ -187,5 +192,22 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         position.y += dy * Double(steps)
         log.debug("pos: \(self.position.x), \(self.position.y)")
 
+    }
+    
+    func computeDeadReckoningUpdate(from current: CGPoint) -> PDRUpdate? {
+        
+        guard stepCount > 0 else {
+            //log.error("step count 0, can't calculate pdr update")
+            return nil
+        }
+
+        let θ = (headingDeg - zeroHeadingOffset) * .pi / 180.0
+        let dx = cos(θ) * stepLength
+        let dy = sin(θ) * stepLength
+
+        let delta = CGPoint(x: dx * Double(stepCount), y: dy * Double(stepCount))
+        let newPosition = CGPoint(x: current.x + delta.x, y: current.y + delta.y)
+
+        return PDRUpdate(position: newPosition, steps: stepCount)
     }
 }

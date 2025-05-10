@@ -16,6 +16,8 @@ struct SettingsView: View {
                     Toggle("Dead Reckoning", isOn: $viewModel.isDeadReckoningEnabled)
                     Toggle("Confidence", isOn: $viewModel.isConfidenceEnabled)
                     Toggle("Beacon Simulation", isOn: $viewModel.isBeaconSimulationEnabled)
+                    Toggle("BLE Positioning", isOn: $viewModel.isBLEPositioningEnabled)
+                    
                 }
                 
                 Section(header: Text("Calibration")) {
@@ -29,7 +31,14 @@ struct SettingsView: View {
                     }
                     VStack(alignment: .leading) {
                         Text("Position Update Frequency (sec): \(String(format: "%.1f", viewModel.positionUpdateFrequency))")
-                        Slider(value: $viewModel.positionUpdateFrequency, in: 0.5...5.0, step: 0.1)
+                        Slider(value: $viewModel.positionUpdateFrequency, in: 0.1...5.0, step: 0.1)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("RSSI Reference Power (dBm): \(viewModel.rssiReferencePower)")
+                        Slider(value: Binding(
+                            get: { Double(viewModel.rssiReferencePower) },
+                            set: { viewModel.rssiReferencePower = Int($0) }
+                        ), in: -90 ... -50, step: 1)
                     }
                 }
                 

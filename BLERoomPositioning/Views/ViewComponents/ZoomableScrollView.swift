@@ -44,21 +44,24 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         scrollView.showsHorizontalScrollIndicator = false
 
         // ① total scrollable pasture = map (designSize) + padding*2
-        let pasture = CGSize(width: designSize.width  * 3,
-                             height: designSize.height * 3)
-        scrollView.contentSize = pasture
+        //let pasture = CGSize(width: designSize.width  * 3,
+        //                     height: designSize.height * 3)
+        //scrollView.contentSize = pasture
+        scrollView.contentSize = scrollView.bounds.size        // ← same as before
+
         
         // ② place the hosted map view at (padding.x, padding.y)
-        let hostView = context.coordinator.hostingController.view!
-        hostView.frame = CGRect(origin: CGPoint(x: padding.width,
-                                                y: padding.height),
-                                size: designSize)
+        //let hostView = context.coordinator.hostingController.view!
+        //hostView.frame = CGRect(origin: CGPoint(x: padding.width,
+        //                                        y: padding.height),
+        //                        size: designSize)
         // no autoresizing masks
-        scrollView.addSubview(hostView)
+        //scrollView.addSubview(hostView)
 
+        //
         // ③ start with map centred in viewport
-        scrollView.contentOffset = CGPoint(x: padding.width - scrollView.bounds.width/2 + designSize.width/2,
-                                           y: padding.height - scrollView.bounds.height/2 + designSize.height/2)
+        //scrollView.contentOffset = CGPoint(x: padding.width - scrollView.bounds.width/2 + designSize.width/2,
+        //                                   y: padding.height - scrollView.bounds.height/2 + designSize.height/2)
         // … add double‑tap gesture …
     
         // Add double-tap gesture recognizer for zooming.
@@ -68,14 +71,14 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
         
-        /*
+        
         let hostedView = context.coordinator.hostingController.view!
-        //hostedView.frame = scrollView.bounds
-        hostedView.frame = CGRect(origin: .zero, size: designSize)
-        //hostedView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        hostedView.autoresizingMask = []
+        hostedView.frame = scrollView.bounds
+        //hostedView.frame = CGRect(origin: .zero, size: designSize)
+        hostedView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        //hostedView.autoresizingMask = []
         scrollView.addSubview(hostedView)
-         */
+         
         return scrollView
     }
 

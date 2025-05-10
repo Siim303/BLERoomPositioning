@@ -116,17 +116,32 @@ struct AddBeaconOverlay: View {
         }
     }
 
-    // MARK: – Actions
+    /// Returns the current window scene’s top safe‑area inset (status + nav bar height).
+    fileprivate func currentTopSafeInset() -> CGFloat {
+        guard
+            let scene  = UIApplication.shared.connectedScenes
+                           .compactMap({ $0 as? UIWindowScene }).first,
+            let window = scene.windows.first
+        else { return 0 }
+        return window.safeAreaInsets.top
+    }
 
+    
+    // MARK: – Actions
     private func mainButtonTapped() {
         if placing {
-            let originShiftX = designSize.width
-            let originShiftY = designSize.height
+            //let originShiftX = designSize.width
+            //let originShiftY = designSize.height
             // convert centre‑of‑screen to design coords
-            let viewCenter = CGPoint(x: UIScreen.main.bounds.width / 2,
-                                     y: UIScreen.main.bounds.height / 2)
-            let designX = round((viewCenter.x + contentOffset.x - originShiftX) / (baseScale * zoomScale)*100.0)/100.0
-            let designY = round((viewCenter.y + contentOffset.y - originShiftY) / (baseScale * zoomScale)*100.0)/100.0
+            
+            let viewCenter = CGPoint(x: UIScreen.main.bounds.midX,
+                                     y: UIScreen.main.bounds.midY - currentTopSafeInset())
+
+            
+            //let viewCenter = CGPoint(x: UIScreen.main.bounds.width / 2,
+            //                         y: UIScreen.main.bounds.height / 2)
+            let designX = round(((viewCenter.x + contentOffset.x) / (baseScale * zoomScale))*100.0)/100.0
+            let designY = round(((viewCenter.y + contentOffset.y) / (baseScale * zoomScale))*100.0)/100.0
             pickedPos = CGPoint(x: designX, y: designY)
             showSheet = true
         }
@@ -135,11 +150,12 @@ struct AddBeaconOverlay: View {
 
     private func saveBeacon() {
         guard let idInt = Int(beaconID) else { return }
-
+        
         // 1. load existing json (if any)
         var dict = BeaconPositionsManager.loadPositions()   // [String: CGPoint]
         // 2. add / overwrite
         dict[String(idInt)] = pickedPos
+        print("💾 writing y =", pickedPos.y)
         // 3. save back
         BeaconPositionsManager.savePositions(dict)
         // 4. notify listeners

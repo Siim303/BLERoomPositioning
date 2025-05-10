@@ -10,14 +10,19 @@ import CoreGraphics
 
 class RoomPositioningViewModel: ObservableObject {
     // Published properties for UI binding
-    @Published var fusedPosition: CGPoint? = nil
+    @Published var fusedPosition: CGPoint = .zero
     @Published var discoveredDevices: [BLEDevice] = []
     @Published var showingSettings: Bool = false
     @Published var centerOffset: CGSize = .zero
+    // @Published var fusedPositionSetTime: Date? = nil
+    
     
     // Service dependencies
     private var bleScanner: BLEScanner = BLEScanner()
     private var deadReckoningManager: DeadReckoningManager = DeadReckoningManager()
+    private var pdrManager: PDRManager = PDRManager()
+    private var fusionManager: PositionFusionManager!
+
     
     // Injected settings (via updateSettings)
     private var settings: SettingsViewModel?
@@ -29,6 +34,7 @@ class RoomPositioningViewModel: ObservableObject {
     
     // Minimal initializer
     init() {
+        updateSettings(with: SettingsViewModel())
         setupBindings()
         startServices()
     }
@@ -41,24 +47,42 @@ class RoomPositioningViewModel: ObservableObject {
     func updateSettings(with settings: SettingsViewModel) {
         self.settings = settings
         // Subscribe to settings changes
-        settings.$isDeadReckoningEnabled
-            .sink { [weak self] _ in self?.updateFusedPosition() }
-            .store(in: &cancellables)
+        // Create fusionManager when settings become available
+        fusionManager = PositionFusionManager(settings: settings)
         
-        settings.$isConfidenceEnabled
-            .sink { [weak self] _ in self?.updateFusedPosition() }
+        // This basically retrives position value from fusion class and publishes it
+        fusionManager.$fusedPosition
+            .assign(to: &$fusedPosition)
+        /*
+        fusionManager.$fusedPosition
+            .sink { newPos in
+                print("📡 Fusion updated: \(newPos)")
+                self.fusedPosition = newPos
+            }
             .store(in: &cancellables)
-        
+        */
         // Subscribe to the simulation toggle.
         settings.$isBeaconSimulationEnabled
             .sink { [weak self] newValue in
                 guard let self = self else { return }
                 print("Beacon simulation toggled: \(newValue)")
-                if newValue {
+                if newValue { //this starts the simulating but also doesn't stop the scanning in the background
                     self.bleScanner.simulateBeaconData()
                 } else {
-                    //self.bleScanner.stopSimulation()  // Make sure this method stops your timer
+                    self.bleScanner.stopSimulation()  // Make sure this method stops your timer
                     self.bleScanner.startScanning()
+                }
+            }
+            .store(in: &cancellables)
+        settings.$isBLEPositioningEnabled
+            .sink { [weak self] newValue in
+                guard let self = self else { return }
+                print("BLE positioning toggled: \(newValue)")
+                if newValue {
+                    self.bleScanner.startScanning()
+                } else {
+                    self.bleScanner.stopScanning()
+                    //print(fusedPosition?.x, fusedPosition?.y)
                 }
             }
             .store(in: &cancellables)
@@ -66,29 +90,38 @@ class RoomPositioningViewModel: ObservableObject {
     
     // Sample binding setup for BLE data and sensor data updates.
     private func setupBindings() {
+        // Send BLE updates to fusion class
         bleScanner.$discoveredDevices
             .sink { [weak self] devices in
                 self?.discoveredDevices = devices
-                self?.updateFusedPosition()
+                self?.fusionManager.updateBLEDevices(devices)
             }
             .store(in: &cancellables)
         
+        // Send PDR updates to fusion class
+        // TODO: change from deadReckoning class to PDR class or connect them?
         deadReckoningManager.$currentPosition
-            .sink { [weak self] _ in
-                self?.updateFusedPosition()
+            .sink { [weak self] position in
+                self?.fusionManager.updatePDRPosition(position)
             }
             .store(in: &cancellables)
+        
+        
     }
     
     private func startServices() {
         bleScanner.startScanning()
         deadReckoningManager.startUpdates()
+        //pdrManager = PDRManager()  // or however you're actually injecting it
     }
     
     // Minimal fusion logic using the injected settings.
-    func updateFusedPosition() {
-        guard let settings = settings else { return }
+    
+    // MARK: This whole thing moved to PositionFusionManager class, to be removed from here
+    //func updateFusedPosition() {
+        //guard let settings = settings else { return }
         
+        /*
         if settings.isConfidenceEnabled,
            let bleResult = PositionConfidence.calculatePositionWithConfidence(devices: discoveredDevices) {
             let blePosition = bleResult.position
@@ -101,23 +134,53 @@ class RoomPositioningViewModel: ObservableObject {
             //print("Debug info: \(settings.isDebugLoggingEnabled)")
             
             
-        } else if let blePosition = PositionCalculator.calculatePosition(devices: discoveredDevices) {
+        } else*/
+        // MARK:  Thoughts about improvement
+        // maybe update only once per 1 second so it looks smoother and not jumpy/indecisive
+        //
+        //
+        //let fusedPos = fusedPosition ?? CGPoint.zero
+        //print(pdrManager.computeDeadReckoningUpdate(from: fusedPos))
+        //
+        
+        /* moving to PositionFusionManager class
+        if settings.isBLEPositioningEnabled, let calculationResult = PositionCalculator.calculate(devices: discoveredDevices) {
+            let blePosition = calculationResult.position
+            let confidence = calculationResult.confidence
+            
+            //adjust position if needed
+            // check for pdr info
+            // check for previos position and decide if the change in position is possible on foot or if the pdr caught the travel
+            
             fusedPosition = blePosition
             
-        } else if settings.isDeadReckoningEnabled {
+        } else if settings.isDeadReckoningEnabled, let fusedPos = fusedPosition,
+                  let pdrUpdate = pdrManager.computeDeadReckoningUpdate(from: fusedPos) {
+            print("\(fusedPos.x), \(fusedPos.y) -> \(pdrUpdate.position.x), \(pdrUpdate.position.y)")
+            fusedPosition = pdrUpdate.position
+            
+            
+        }
+        
+        else {
+            //...
+        }*/
+        
+        /*else if settings.isDeadReckoningEnabled {
             fusedPosition = deadReckoningManager.currentPosition
             
         } else {
             fusedPosition = nil
-        }
+        }*/
         
         // If autoCenter is enabled and there is a new position, call the callback immediately.
         // Later, in your update function:
+        /* This block also seems pointless TODO: To be removed
         if let newPosition = fusedPosition, newPosition != lastPos {
             lastPos = newPosition
             //print("Fused position: \(newPosition), NanoTime: \(Date().timeIntervalSince1970 * 1000)")
-        }
+        }*/
         
-    }
+    //}
    
 }

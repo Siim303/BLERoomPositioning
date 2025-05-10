@@ -9,6 +9,7 @@ import Foundation
 import CoreLocation
 import CoreGraphics
 import Combine
+import os.log
 
 class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
     // MARK: - Published Properties
@@ -21,6 +22,8 @@ class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
     private lazy var beaconConstraint = CLBeaconIdentityConstraint(uuid: beaconUUID)
     var beaconPositions: [String: CGPoint] = [:]              // minor string → position
     
+    private let log = Logger(subsystem: "BLEScanner", category: "core")
+    
     private var cancellable: AnyCancellable?        // NEW
 
 
@@ -32,7 +35,7 @@ class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         // Load beacon positions from JSON
         beaconPositions = BeaconPositionsManager.loadPositions()
-        print("beaconPositions: \(beaconPositions)")
+        log.debug("beaconPositions: \(self.beaconPositions)")
         
         // CoreLocation setup
         locationManager.delegate = self
@@ -44,7 +47,7 @@ class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.beaconPositions = BeaconPositionsManager.loadPositions()
-                print("🔄 reloaded positions: \(self.beaconPositions)")
+                log.info("🔄 reloaded positions: \(self.beaconPositions)")
                 // if your UI relies on discoveredDevices, rebuild them here too
             }
     }
@@ -88,7 +91,7 @@ class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
                     lastSeen: Date()
                 )
             }.sorted { $0.rssi > $1.rssi }
-            //print("discoveredDevices:", self.discoveredDevices)
+            //self.log.debug("discoveredDevices: \(self.discoveredDevices)")
 
         }
         //print(discoveredDevices)
@@ -114,6 +117,12 @@ class BLEScanner: NSObject, ObservableObject, CLLocationManagerDelegate {
             DispatchQueue.main.async {
                 self.discoveredDevices = fakeBeacons.sorted { $0.rssi > $1.rssi }
             }
+        }
+        
+    }
+    func stopSimulation() {
+        if let timer = timer {
+            timer.invalidate()
         }
     }
 }

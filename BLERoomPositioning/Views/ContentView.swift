@@ -34,7 +34,7 @@ struct ContentView: View {
                 } else {
                     Text("Debug mode")
                 }
-                
+                /*
                 if settings.isDebugLoggingEnabled {
                     VStack(alignment: .leading, spacing: 8) {
                         // List discovered BLE devices and their signal strengths.
@@ -42,7 +42,7 @@ struct ContentView: View {
                             Text("\(device.name): \(device.rssi) dBm")
                                 .font(.subheadline)
                         }
-                        
+                        /*
                         // Display the estimated (fused) position.
                         if let pos = viewModel.fusedPosition {
                             Text("Estimated Position: (\(String(format: "%.2f", pos.x)), \(String(format: "%.2f", pos.y)))")
@@ -54,10 +54,10 @@ struct ContentView: View {
                                 .font(.headline)
                                 .foregroundColor(.orange)
                                 .padding(.top)
-                        }
+                        }*/
                     }
                     .padding()
-                }
+                }*/
                 // Switch the displayed view depending on the selection.
                 if selectedMap == .house {
                     RoomView(position: viewModel.fusedPosition,

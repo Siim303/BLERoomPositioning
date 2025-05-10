@@ -39,17 +39,23 @@ struct RoomView: View {
                 GridOverlay(spacing: 1 * worldScale, designSize: (CGSize(width: designSize.width, height: designSize.height)))
                 
                 ForEach(beacons) { beacon in
-                    Circle()
-                        .fill(Color.purple)
-                        .frame(width: 20, height: 20)
-                        .position(beacon.position)
+                    ZStack {
+                        Circle()
+                            .fill(Color.purple)
+                            .frame(width: 20, height: 20)
+                        Text(beacon.name)
+                            .foregroundColor(.white)
+                            .font(.caption)
+                            .bold()
+                    }
+                    .position(beacon.position)
                 }
                 if let pos = position {
                     Circle()
                         .fill(Color.red)
                         .frame(width: 20, height: 20)
                         .position(pos)
-                        .animation(Animation.easeInOut(duration: 0.3).delay(0.1), value: pos)
+                        .animation(Animation.easeInOut(duration: 0.1), value: pos)
                 }
             }
             .frame(width: designSize.width, height: designSize.height, alignment: .topLeading)
@@ -106,14 +112,14 @@ struct RoomView: View {
     private func centerOnUser(using geo: GeometryProxy, baseScale: CGFloat) {
         guard let userPosition = position else { return }
         
-        let originShiftX = designSize.width          // same padding.x
-        let originShiftY = designSize.height
+        //let originShiftX = designSize.width          // same padding.x
+        //let originShiftY = designSize.height
         
         // Calculate the user's position in scaled content coordinates.
-        //let scaledUserX = userPosition.x * zoomScale * baseScale
-        //let scaledUserY = userPosition.y * zoomScale * baseScale
-        let scaledUserX = userPosition.x * zoomScale * baseScale + originShiftX
-        let scaledUserY = userPosition.y * zoomScale * baseScale + originShiftY
+        let scaledUserX = userPosition.x * zoomScale * baseScale
+        let scaledUserY = userPosition.y * zoomScale * baseScale
+        //let scaledUserX = userPosition.x * zoomScale * baseScale + originShiftX
+        //let scaledUserY = userPosition.y * zoomScale * baseScale + originShiftY
         
         let viewCenter = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
         // UIScrollView's contentOffset is defined by the top-left visible point.
