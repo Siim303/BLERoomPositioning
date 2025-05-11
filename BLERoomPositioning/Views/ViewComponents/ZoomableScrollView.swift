@@ -7,18 +7,21 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
     @Binding var zoomScale: CGFloat
     let maximumZoom: CGFloat
     let designSize: CGSize
+    let autoCenter: Bool
 
     init(
         designSize: CGSize,
         contentOffset: Binding<CGPoint>,
         zoomScale: Binding<CGFloat>,
         maximumZoom: CGFloat,
+        autoCenter: Bool,
         @ViewBuilder content: () -> Content
     ) {
         self.designSize = designSize
         self._contentOffset = contentOffset
         self._zoomScale = zoomScale
         self.maximumZoom = maximumZoom
+        self.autoCenter = autoCenter
         self.content = content()
     }
     // NEW helper so RoomView can ask for the padding value later
@@ -78,7 +81,12 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         hostedView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         //hostedView.autoresizingMask = []
         scrollView.addSubview(hostedView)
-         
+        
+        /// Optional: disable gestures while autocentered
+        scrollView.isScrollEnabled = !autoCenter
+        scrollView.panGestureRecognizer.isEnabled = !autoCenter
+        /// Disable zoom while autocentered
+        //scrollView.pinchGestureRecognizer?.isEnabled = !autoCenter
         return scrollView
     }
 
@@ -94,11 +102,21 @@ struct ZoomableScrollView<Content: View>: UIViewRepresentable {
         }
         
         if uiView.contentOffset != contentOffset {
-            uiView.setContentOffset(contentOffset, animated: true)
+            if !autoCenter {
+                uiView.setContentOffset(contentOffset, animated: true)
+            } else {
+                UIView.animate(withDuration: 0.3) {
+                    uiView.setContentOffset(contentOffset, animated: false)
+                }
+            }
         }
         if uiView.zoomScale != zoomScale {
             uiView.setZoomScale(zoomScale, animated: true)
         }
+        /// Disable gestures onUpdate
+        uiView.isScrollEnabled = !autoCenter
+        uiView.panGestureRecognizer.isEnabled = !autoCenter
+        //uiView.pinchGestureRecognizer?.isEnabled = !autoCenter
     }
 
     func makeCoordinator() -> Coordinator {

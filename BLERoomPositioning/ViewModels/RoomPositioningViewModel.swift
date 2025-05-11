@@ -7,22 +7,25 @@
 import SwiftUI
 import Combine
 import CoreGraphics
+import os.log
 
 class RoomPositioningViewModel: ObservableObject {
     // Published properties for UI binding
     @Published var fusedPosition: CGPoint = .zero
+    @Published var headingDeg: Double = 0  // 👈 expose heading
     @Published var discoveredDevices: [BLEDevice] = []
     @Published var showingSettings: Bool = false
     @Published var centerOffset: CGSize = .zero
-    // @Published var fusedPositionSetTime: Date? = nil
     
+    // @Published var fusedPositionSetTime: Date? = nil
     
     // Service dependencies
     private var bleScanner: BLEScanner = BLEScanner()
-    private var deadReckoningManager: DeadReckoningManager = DeadReckoningManager()
+    //private var deadReckoningManager: DeadReckoningManager = DeadReckoningManager() Legacy
     private var pdrManager: PDRManager = PDRManager()
     private var fusionManager: PositionFusionManager!
 
+    private let log = Logger(subsystem: "PosViewModel", category: "core")
     
     // Injected settings (via updateSettings)
     private var settings: SettingsViewModel?
@@ -34,10 +37,21 @@ class RoomPositioningViewModel: ObservableObject {
     
     // Minimal initializer
     init() {
+        // Observe heading
+        pdrManager.$headingDeg
+            .receive(on: RunLoop.main)
+            .assign(to: \.headingDeg, on: self)
+            .store(in: &cancellables)
         updateSettings(with: SettingsViewModel())
         setupBindings()
         startServices()
     }
+    
+    deinit {
+        pdrManager.stop()
+        bleScanner.stopScanning()
+    }
+
     
     func toggleSettingsView() {
         showingSettings.toggle()
@@ -48,7 +62,7 @@ class RoomPositioningViewModel: ObservableObject {
         self.settings = settings
         // Subscribe to settings changes
         // Create fusionManager when settings become available
-        fusionManager = PositionFusionManager(settings: settings)
+        fusionManager = PositionFusionManager(settings: settings, pdrManager: pdrManager)
         
         // This basically retrives position value from fusion class and publishes it
         fusionManager.$fusedPosition
@@ -65,7 +79,7 @@ class RoomPositioningViewModel: ObservableObject {
         settings.$isBeaconSimulationEnabled
             .sink { [weak self] newValue in
                 guard let self = self else { return }
-                print("Beacon simulation toggled: \(newValue)")
+                log.info("Beacon simulation toggled: \(newValue)")
                 if newValue { //this starts the simulating but also doesn't stop the scanning in the background
                     self.bleScanner.simulateBeaconData()
                 } else {
@@ -77,7 +91,7 @@ class RoomPositioningViewModel: ObservableObject {
         settings.$isBLEPositioningEnabled
             .sink { [weak self] newValue in
                 guard let self = self else { return }
-                print("BLE positioning toggled: \(newValue)")
+                log.info("BLE positioning toggled: \(newValue)")
                 if newValue {
                     self.bleScanner.startScanning()
                 } else {
@@ -100,18 +114,21 @@ class RoomPositioningViewModel: ObservableObject {
         
         // Send PDR updates to fusion class
         // TODO: change from deadReckoning class to PDR class or connect them?
+        /*
         deadReckoningManager.$currentPosition
             .sink { [weak self] position in
                 self?.fusionManager.updatePDRPosition(position)
             }
             .store(in: &cancellables)
+         */
         
         
     }
     
     private func startServices() {
         bleScanner.startScanning()
-        deadReckoningManager.startUpdates()
+        pdrManager.start()
+        //deadReckoningManager.startUpdates()
         //pdrManager = PDRManager()  // or however you're actually injecting it
     }
     

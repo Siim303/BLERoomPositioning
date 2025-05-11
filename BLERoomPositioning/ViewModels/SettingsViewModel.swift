@@ -16,7 +16,7 @@ class SettingsViewModel: ObservableObject {
     
     // Calibration parameters
     @Published var accelerometerSensitivity: Double = 50.0  // Multiplier for sensor integration
-    @Published var pathLossExponent: Double = 2.0           // Used in RSSI-to-distance conversion
+    @Published var pathLossExponent: Double = 1.5           // Used in RSSI-to-distance conversion
     @Published var positionUpdateFrequency: Double = 1.0    // Position update interval in seconds
     @Published var rssiReferencePower: Int = -75
     

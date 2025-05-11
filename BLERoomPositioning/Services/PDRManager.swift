@@ -21,18 +21,18 @@ struct PDRUpdate {
 /// Pedestrian Dead Reckoning manager — step driven, heading aware
 final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     func sessionDidBecomeInactive(_ session: WCSession) {
-        print("WCSession became inactive")
+        log.info("WCSession became inactive")
     }
     
     func sessionDidDeactivate(_ session: WCSession) {
-        print("WCSession re‑activated")
+        log.info("WCSession re‑activated")
     }
     
     enum Source { case phone, watch }
     private(set) var source: Source = .phone  // current sensor origin
 
     // MARK: – Public state
-    @Published private(set) var position: CGPoint = .zero  // metres in app‑plane
+    //@Published private(set) var position: CGPoint = .zero  // metres in app‑plane
     @Published private(set) var headingDeg: Double = 0  // 0 = north, clockwise
     //  PDRManager.swift – add a couple of published debug metrics
     @Published private(set) var stepCount: Int = 0
@@ -53,10 +53,10 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
 
     override init() {
         super.init()
-        print(WCSession.isSupported().description)
-        print(wc.isPaired, wc.isWatchAppInstalled)
+        log.info("WcSession.isSupported: \(WCSession.isSupported().description)")
+        log.info("WC paired: \(self.wc.isPaired), WC app installed: \(self.wc.isWatchAppInstalled)")
         if WCSession.isSupported(), wc.isPaired, wc.isWatchAppInstalled {
-            print("Setting up WatchConnectivity")
+            log.info("Setting up WatchConnectivity")
             wc.delegate = self
             wc.activate()
             source = .watch  // we’ll wait for vectors
@@ -83,14 +83,14 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     // MARK: – receive step vectors from the Watch
     func session(_ session: WCSession, didReceiveMessage msg: [String: Any]) {
         guard
-            let dx = msg["dx"] as? Double,
-            let dy = msg["dy"] as? Double,
+            //let dx = msg["dx"] as? Double,
+            //let dy = msg["dy"] as? Double,
             let steps = msg["steps"] as? Int
         else { return }
 
         DispatchQueue.main.async {
-            self.position.x += dx
-            self.position.y += dy
+            //self.position.x += dx
+            //self.position.y += dy
             self.stepCount += steps
         }
     }
@@ -151,7 +151,7 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
             }
             //print("before seting lastStepCount")
             let stepsNow = data.numberOfSteps.intValue
-            print(stepsNow)
+            log.debug("StepsNow: \(String(describing:stepsNow))")
             let deltaSteps = stepsNow - self.lastStepCount
             self.lastStepCount = stepsNow
 
@@ -176,12 +176,13 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
                     log.debug("Δ\(deltaSteps) steps → pos \(self.position)")
                 }*/
                 log.debug("Δ\(deltaSteps) steps → pos")
-                self.advance(by: deltaSteps, stepLength: stepLength)
+                //self.advance(by: deltaSteps, stepLength: stepLength)
             }
         }
 
     }
 
+    /* TODO: To be deleted
     // MARK: – Core PDR integration
     private func advance(by steps: Int, stepLength: Double) {
         let θ = (headingDeg - zeroHeadingOffset) * .pi / 180.0  // radians
@@ -192,7 +193,7 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         position.y += dy * Double(steps)
         log.debug("pos: \(self.position.x), \(self.position.y)")
 
-    }
+    }*/
     
     func computeDeadReckoningUpdate(from current: CGPoint) -> PDRUpdate? {
         
@@ -209,5 +210,16 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         let newPosition = CGPoint(x: current.x + delta.x, y: current.y + delta.y)
 
         return PDRUpdate(position: newPosition, steps: stepCount)
+    }
+    
+    func computeStepDelta(from lastStepCount: Int) -> CGPoint? {
+        let newSteps = stepCount - lastStepCount
+        guard newSteps > 0 else { return nil }
+
+        let θ = (headingDeg - zeroHeadingOffset) * .pi / 180.0
+        let dx = cos(θ) * stepLength * Double(newSteps)
+        let dy = sin(θ) * stepLength * Double(newSteps)
+
+        return CGPoint(x: dx, y: dy)
     }
 }

@@ -7,7 +7,8 @@
 //  PDRView.swift – small tweaks for clarity
 import SwiftUI
 
-struct PDRView: View {
+//struct PDRView: View {
+    /*
     @StateObject private var pdr = PDRManager()
 
     var body: some View {
@@ -40,4 +41,5 @@ struct PDRView: View {
             Text(String(format: "%.2f", value)).monospacedDigit()
         }
     }
-}
+     */
+//}

@@ -27,6 +27,8 @@ final class PositionFusionManager: ObservableObject {
     // MARK: - Dependencies
 
     private let settings: SettingsViewModel  // Provides toggles for DR, BLE, confidence, etc.
+    private let pdr: PDRManager
+
 
     // MARK: - State
     
@@ -40,6 +42,8 @@ final class PositionFusionManager: ObservableObject {
     private var bleDevices: [BLEDevice] = []  // Most recent BLE scan results
     private var knownBLEDevices: [BeaconKey: BLEDevice] = [:]  // Recent beacons with latest data (Meaning that var: bleDevices updates this variable)
 
+    private var lastAppliedStepCount: Int = 0
+    
     private var cancellables = Set<AnyCancellable>()  // For Combine subscriptions
     
     private var bleTimeout: Double = 2.0 // We only use beacons that have had a signal in the past x time
@@ -52,8 +56,9 @@ final class PositionFusionManager: ObservableObject {
     // MARK: - Initialization
 
     /// Creates the fusion manager and starts observing settings.
-    init(settings: SettingsViewModel) {
+    init(settings: SettingsViewModel, pdrManager: PDRManager) {
         self.settings = settings
+        self.pdr = pdrManager
         observeSettings()
         startPredictionLoop()
     }
@@ -159,14 +164,18 @@ final class PositionFusionManager: ObservableObject {
         lastUpdateTime = now
         
         var predicted = fusedPosition
+        var bLEPredicted = fusedPosition
         
         //debugBLEVisibility(now: now)
         
         // --- PDR prediction ---
         if settings.isDeadReckoningEnabled {
-            //if let pdrUpdate = pdrManager.computeDeadReckoningUpdate(from: fusedPosition) {
-            //    predicted = pdrUpdate.position
-            //}
+            if let delta = pdr.computeStepDelta(from: lastAppliedStepCount) {
+                predicted.x += delta.x
+                predicted.y += delta.y
+                lastAppliedStepCount = pdr.stepCount
+                log.debug("PDR: Step delta: \(delta.x), \(delta.y)")
+            }
         }
         
         // --- BLE correction ---
@@ -179,12 +188,12 @@ final class PositionFusionManager: ObservableObject {
             if let result = PositionCalculator.calculate(devices: recentDevices, txPower: txPower, pathLossExponent: pathLoss) {
                 let blePos = result.position
                 let confidence = result.confidence
-                log.info("Confidence: \(confidence), Position: \(blePos.x), \(blePos.y)")
+                //log.info("Confidence: \(confidence), Position: \(blePos.x), \(blePos.y)")
                 // Save for optional debugging
                 lastBLEPosition = blePos
                 lastBLEConfidence = confidence
                 
-                if isBLEJumpReasonable(newBLE: blePos) || (Date().timeIntervalSince(lastFusedPositionUpdateTime) > 3) {
+                if fusedPosition == .zero || isBLEJumpReasonable(newBLE: blePos) || (Date().timeIntervalSince(lastFusedPositionUpdateTime) > 3) {
                     if settings.isConfidenceEnabled && false {
                         //let x = blePos.x * confidence + predicted.x * (1 - confidence)
                         //let y = blePos.y * confidence + predicted.y * (1 - confidence)
@@ -192,18 +201,24 @@ final class PositionFusionManager: ObservableObject {
                     } else {
                         //log.debug("Position changed by BLE, old x: \(Double(predicted.x)), y: \(Double(predicted.y)), new x: \(Double(blePos.x)), y: \(Double(blePos.y))")
                         fusedPosition = blePos
+                        bLEPredicted = blePos
                         lastFusedPositionUpdateTime = Date()
-                        //print("⚠️ ViewModel fusedPosition = \(fusedPosition)")  // Inside RoomPositioningViewModel
+                        print("⚠️ ViewModel fusedPosition = \(fusedPosition)")  // Inside RoomPositioningViewModel
                     }
-                    return
+                    //return // TODO: Think if this should be here or not
                 } else {
-                    //log.debug("🚫 BLE jump rejected: too far from predicted position.")
+                    log.debug("🚫 BLE jump rejected: too far from predicted position.")
                 }
             }
         }
-
+        
+        /// Logic to decide how to update position
+        // fusedPosition = predicted or fusedPosition = bLEPredicted or a mix of these
+        //fusedPosition = bLEPredicted
+        
+        log.debug("fusedPosition: \(self.fusedPosition.x), \(self.fusedPosition.y)")
+        log.debug("BLE predicted: \(bLEPredicted.x), \(bLEPredicted.y), PDR predicted: \(predicted.x), \(predicted.y), time: \(Date())")
         // --- Fallback to prediction only ---
-        fusedPosition = predicted
         
     }
     

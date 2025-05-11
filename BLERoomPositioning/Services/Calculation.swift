@@ -23,6 +23,10 @@ struct PositionMath {
     ///   - Indoors with walls and obstructions, `n` is typically between 2.2 and 4.0
     ///   A higher `n` means signal strength decreases faster with distance, resulting in shorter estimated ranges for the same RSSI.
     ///
+    /// - **Return value**: The result is an estimated distance in **meters** from the receiver to the beacon.
+    ///   This is a theoretical value based on signal strength and can vary due to environmental noise, reflections, or interference.
+    ///   The estimate tends to be less reliable at distances >5 meters or when the RSSI fluctuates rapidly.
+    ///
     /// Note: The formula assumes signal loss follows a logarithmic curve, which is an approximation.
     /// For best results, calibrate `txPower` and `n` based on empirical measurements in your environment.
     static func rssiToDistance(rssi: Int,
@@ -51,11 +55,20 @@ extension PositionCalculator {
 
         // Distances (dᵢ) and weights (wᵢ = RSSI strength in [0,1])
         let distances = devices.map { PositionMath.rssiToDistance(rssi: $0.rssi, txPower: txPower, pathLossExponent: pathLossExponent) }
+        var devDistances = ""
+        for i in 0..<devices.count {
+            devDistances += "\(devices[i].name): \((distances[i]*1000).rounded()/1000) | "
+        }
+        /// This whole line to just cut off 3 last characters of a string is Swift ¯\_(ツ)_/¯
+        log.debug("\(devDistances[devDistances.startIndex..<devDistances.index(devDistances.endIndex, offsetBy: -3)])")
+        
         let weights   = devices.map { d -> Double in
             let norm = (Double(d.rssi) + 100) / 70.0
             return max(0.1, min(1.0, norm))
         }
-
+        
+        log.debug("Weights: \(weights)")
+        
         // Use the first beacon as the reference
         let ref = devices[0]
         let x0 = Double(ref.position.x), y0 = Double(ref.position.y), d0 = distances[0]
@@ -90,7 +103,13 @@ extension PositionCalculator {
 
         let x = inv00 * T0 + inv01 * T1
         let y = inv01 * T0 + inv11 * T1
-        return CGPoint(x: x, y: y)
+        
+        let pos = CGPoint(x: CGFloat(x), y: CGFloat(y))
+
+        // Log again with fused position
+        FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: pos)
+        
+        return pos
     }
 }
 
@@ -111,6 +130,9 @@ struct PositionCalculator {
         case 1:
             // Single beacon → just return the beacon’s own coordinates.
             //log.info("1 beacons: \(devices[0].position.x), \(devices[0].position.y)")
+            let distances: [Double] = [PositionMath.rssiToDistance(rssi: devices[0].rssi, txPower: txPower, pathLossExponent: pathLossExponent)]
+            FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: devices[0].position)
+            
             return PositionResult(position: devices[0].position,
                                   confidence: confidence)
 
@@ -124,6 +146,12 @@ struct PositionCalculator {
                 p1: devices[0].position, d1: d1,
                 p2: devices[1].position, d2: d2
             )
+            
+            let distances: [Double] = [d1, d2]
+            
+            FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: p)
+
+            
             //log.info("2 beacons: \(p.x), \(p.y)")
             return PositionResult(position: p, confidence: confidence)
 

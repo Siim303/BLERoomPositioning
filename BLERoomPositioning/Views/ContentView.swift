@@ -64,16 +64,20 @@ struct ContentView: View {
                              beacons: viewModel.discoveredDevices,
                              mapImageName: "Room_background",
                              designSize: CGSize(width: 1000, height: 1000),
-                             worldScale: CGFloat(250))// What number do you need to divide designSize by to get 1m2 in real world
+                             worldScale: CGFloat(250),
+                             headingDeg: viewModel.headingDeg
+                    )// What number do you need to divide designSize by to get 1m2 in real world
                     .ignoresSafeArea()
                 } else if selectedMap == .delta2ndFloor {
                     RoomView(position: viewModel.fusedPosition,
                              beacons: viewModel.discoveredDevices,
                              mapImageName: "Delta_2korrus",
                              designSize: CGSize(width: 4000, height: 4000),
-                             worldScale: CGFloat(30))
+                             worldScale: CGFloat(30),
+                             headingDeg: viewModel.headingDeg
+                    )
                 } else if selectedMap == .pdr {
-                    PDRView()
+                    //PDRView()
                 }
 
                 //Spacer()
