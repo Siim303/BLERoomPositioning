@@ -178,9 +178,10 @@ final class PositionFusionManager: ObservableObject {
             }
         }
         
+        let recentDevices = settings.isBLEPositioningEnabled ? recentBLEDevices() : []
         // --- BLE correction ---
-        if settings.isBLEPositioningEnabled {
-            let recentDevices = recentBLEDevices()
+        if !recentDevices.isEmpty {
+            //let recentDevices = recentBLEDevices()
             
             let txPower = settings.rssiReferencePower
             let pathLoss = settings.pathLossExponent
@@ -200,23 +201,23 @@ final class PositionFusionManager: ObservableObject {
                         //fusedPosition = CGPoint(x: x, y: y)
                     } else {
                         //log.debug("Position changed by BLE, old x: \(Double(predicted.x)), y: \(Double(predicted.y)), new x: \(Double(blePos.x)), y: \(Double(blePos.y))")
-                        fusedPosition = blePos
+                        //fusedPosition = blePos
                         bLEPredicted = blePos
                         lastFusedPositionUpdateTime = Date()
-                        print("⚠️ ViewModel fusedPosition = \(fusedPosition)")  // Inside RoomPositioningViewModel
+                        //print("⚠️ ViewModel fusedPosition = \(fusedPosition)")  // Inside RoomPositioningViewModel
                     }
                     //return // TODO: Think if this should be here or not
                 } else {
-                    log.debug("🚫 BLE jump rejected: too far from predicted position.")
+                    //log.debug("🚫 BLE jump rejected: too far from predicted position.")
                 }
             }
         }
         
         /// Logic to decide how to update position
         // fusedPosition = predicted or fusedPosition = bLEPredicted or a mix of these
-        //fusedPosition = bLEPredicted
+        fusedPosition = bLEPredicted
         
-        log.debug("fusedPosition: \(self.fusedPosition.x), \(self.fusedPosition.y)")
+        //log.debug("fusedPosition: \(self.fusedPosition.x), \(self.fusedPosition.y)")
         log.debug("BLE predicted: \(bLEPredicted.x), \(bLEPredicted.y), PDR predicted: \(predicted.x), \(predicted.y), time: \(Date())")
         // --- Fallback to prediction only ---
         
