@@ -26,26 +26,27 @@ final class PositionFusionManager: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let settings: SettingsViewModel  // Provides toggles for DR, BLE, confidence, etc.
+    private let settings: SettingsViewModel  // Provides toggles for PDR, BLE, confidence, ..
     let pdr: PDRManager
 
     // MARK: - State
 
     private let log = Logger(subsystem: "FusedPosition", category: "core")
 
-    private var lastBLEPosition: CGPoint?  // Last known good BLE fix
-    private var lastPDRPosition: CGPoint = .zero  // Most recent step-estimated position
-    private var lastUpdateTime: Date = Date()  // For calculating prediction delta time
+    //private var lastBLEPosition: CGPoint?  // Last known good BLE fix
+    //private var lastPDRPosition: CGPoint = .zero  // Most recent step-estimated position
     private var lastFusedPositionUpdateTime: Date = Date()  // For calculating prediction delta time
-    //private var lastBLEConfidence: Int = 0  //
     private var bleDevices: [BLEDevice] = []  // Most recent BLE scan results
     private var knownBLEDevices: [BeaconKey: BLEDevice] = [:]  // Recent beacons with latest data (Meaning that var: bleDevices updates this variable)
+
+    private var recentBLEPositions: [CGPoint] = []
+    private let bleHistoryLimit = 4
 
     private var lastAppliedStepCount: Int = 0
 
     private var cancellables = Set<AnyCancellable>()  // For Combine subscriptions
 
-    private var bleTimeout: Double = 2.0  // We only use beacons that have had a signal in the past x time
+    private var bleTimeout: Double = 2.0  // We only use beacons that have had a signal in the past x time (sec)
 
     // MARK: - Timer
 
@@ -61,19 +62,19 @@ final class PositionFusionManager: ObservableObject {
         observeSettings()
         startPredictionLoop()
         /// For testing only, to delete
-        fusedPosition = CGPoint(x: 800, y: 800)
+        //fusedPosition = CGPoint(x: 800, y: 800)
+        //fusedPosition = CGPoint(x: 341, y: 1756)
         //lastAppliedStepCount = pdr.stepCount
     }
 
     // MARK: - Public Input Methods
 
     /// Called by ViewModel when new BLE devices are discovered.
-    //  Store and prepare to update BLE position estimate
+    /// Store and prepare to update BLE position estimate
     func updateBLEDevices(_ devices: [BLEDevice]) {
-        // Store for later use (e.g. in confidence or correction logic)
+        // Store for later use
         self.bleDevices = devices
-        //print(devices)
-        for device in devices {  //TODO: Test if this actually updates the known beacons correctly
+        for device in devices {
             let key = BeaconKey(uuid: device.uuid, name: device.name)
             if device.rssi == 0 {
                 continue
@@ -89,11 +90,6 @@ final class PositionFusionManager: ObservableObject {
             guard let seen = device.lastSeen else { return false }
             return now.timeIntervalSince(seen) <= bleTimeout
         }
-    }
-
-    /// Called when a new position is estimated via dead reckoning.
-    func updatePDRPosition(_ position: CGPoint) {
-        // Update PDR-based estimate used for prediction
     }
 
     // MARK: - Private Fusion Logic
@@ -130,7 +126,7 @@ final class PositionFusionManager: ObservableObject {
         // Use a Combine timer that fires on the main thread
         predictionTimer =
             Timer
-            .publish(every: updateFrequency, on: .main, in: .common)  // 0.1s = 10 Hz
+            .publish(every: updateFrequency, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.updateFusedPosition()
@@ -145,17 +141,13 @@ final class PositionFusionManager: ObservableObject {
 
     /// Recalculates the fused position based on BLE and/or PDR updates.
     private func updateFusedPosition() {
-        // Kalman-style prediction + correction logic lives here
-        // as a start for testing purposes print out each known beacon sorted by last seen first, (also print beacon time since seen and rssi and name ofc)
+        // Collecting BLE & PDR data and Kalman-style prediction + correction logic lives here
         let now = Date()
-        //let dt = now.timeIntervalSince(lastUpdateTime)
-        lastUpdateTime = now
 
         var predicted = fusedPosition
         var bLEPredicted = fusedPosition
         var bleConfidence: Int = 0
         var stepDelta = -1
-        
 
         //debugBLEVisibility(now: now)
 
@@ -169,23 +161,17 @@ final class PositionFusionManager: ObservableObject {
                 predicted.x += delta.x * settings.worldScale
                 predicted.y += delta.y * settings.worldScale
                 lastAppliedStepCount = pdr.stepCount
-                
+
                 FusionLogger.shared.logPDRFrame(fused: predicted)
-
                 //log.debug("PDR: Step delta: \(delta.x), \(delta.y)")
-            } /*
-            if let delta = pdr.consumeStepDelta() {
-                predicted.x += delta.x
-                predicted.y += delta.y
-                log.debug("PDR: Step delta: \(delta.x), \(delta.y)")
-            }*/
+            }
         }
-
+        // Check if BLE is enabled and get recent beacons
         let recentDevices =
             settings.isBLEPositioningEnabled ? recentBLEDevices() : []
+
         // --- BLE correction ---
         if !recentDevices.isEmpty {
-            //let recentDevices = recentBLEDevices()
 
             let txPower = settings.rssiReferencePower
             let pathLoss = settings.pathLossExponent
@@ -194,32 +180,35 @@ final class PositionFusionManager: ObservableObject {
                 devices: recentDevices,
                 txPower: txPower,
                 pathLossExponent: pathLoss,
-                maxBeacons: 4 /// Set value between 3 and inf/nil, if set to under 3 uses centroid
+                maxBeacons: 8/// Set value between 3 and inf/nil, if set to under 3 uses centroid
             ) {
                 let blePos = result.position
                 let confidence = result.confidence
                 //log.info("Confidence: \(confidence), Position: \(blePos.x), \(blePos.y)")
-                // Save for optional debugging
-                lastBLEPosition = blePos
+                //lastBLEPosition = blePos
                 bleConfidence = confidence
 
                 /// Check if there is no fusedPosition or if the jump is suitable
                 if fusedPosition == .zero || isBLEJumpReasonable(newBLE: blePos)
                 {
                     bLEPredicted = blePos
-                    lastFusedPositionUpdateTime = Date()
+                    
+                    if fusedPosition == .zero && bLEPredicted != .zero {
+                        fusedPosition = bLEPredicted
+                        return
+                    }
+                    
+                    //lastFusedPositionUpdateTime = Date()
+                    // This is to fix wrong positioning when standing still
+                    recentBLEPositions.append(bLEPredicted)
+                    if recentBLEPositions.count > bleHistoryLimit {
+                        recentBLEPositions.removeFirst()
+                    }
                 }
             }
         }
-        if settings.isConfidenceEnabled {
-            /*let bleWeight = calculateBLEWeight(confidence: bleConfidence)
-            let pdrWeight = 1.0 - bleWeight
-
-            let fusedX = predicted.x * pdrWeight + bLEPredicted.x * bleWeight
-            let fusedY = predicted.y * pdrWeight + bLEPredicted.y * bleWeight
-
-            fusedPosition = CGPoint(x: fusedX, y: fusedY)*/
-            
+        if settings.isConfidenceEnabled && settings.isBLEPositioningEnabled && settings.isDeadReckoningEnabled{
+            // Call blending function
             fusedPosition = blendedPosition(
                 predicted: predicted,
                 ble: bLEPredicted,
@@ -232,24 +221,18 @@ final class PositionFusionManager: ObservableObject {
         } else if settings.isDeadReckoningEnabled
             && settings.isBLEPositioningEnabled
         {
-            /// Fallback to avg of both
+            // Fallback to avg of both
             let fusedX = (predicted.x + bLEPredicted.x) / 2
             let fusedY = (predicted.y + bLEPredicted.y) / 2
             fusedPosition = CGPoint(x: fusedX, y: fusedY)
         } else {
+            //log.debug("here")
             fusedPosition =
                 settings.isBLEPositioningEnabled ? bLEPredicted : predicted
         }
-
+        
+        lastFusedPositionUpdateTime = Date()
         FusionLogger.shared.logFusedFrame(fused: fusedPosition)
-
-        /// Logic to decide how to update position
-        // fusedPosition = predicted or fusedPosition = bLEPredicted or a mix of these
-        //fusedPosition = bLEPredicted
-        //fusedPosition = predicted
-        //log.debug("fusedPosition: \(self.fusedPosition.x), \(self.fusedPosition.y)")
-        //log.debug("BLE predicted: \(bLEPredicted.x), \(bLEPredicted.y), PDR predicted: \(predicted.x), \(predicted.y), time: \(Date())")
-        // --- Fallback to prediction only ---
 
     }
 
@@ -263,59 +246,70 @@ final class PositionFusionManager: ObservableObject {
         fusedPrevious: CGPoint,
         lastFusedUpdate: Date
     ) -> CGPoint {
-        
+
+        /// No movement → suppress random  BLE pos values
         if stepCountDelta == 0 {
-            // No movement → suppress BLE correction
-            return predicted  // which should be the same as last fusedPosition
+            /// Check BLE clustering, meaning that if last 4 positions are in a similar spot then move the pos there
+            if recentBLEPositions.count == bleHistoryLimit {
+                let avgX = recentBLEPositions.map { $0.x }.reduce(0, +) / CGFloat(bleHistoryLimit)
+                let avgY = recentBLEPositions.map { $0.y }.reduce(0, +) / CGFloat(bleHistoryLimit)
+                let centroid = CGPoint(x: avgX, y: avgY)
+                let tolerance = 0.3 * settings.worldScale // Number in meters
+
+                // Check if all points are within tolerance
+                let maxDeviation = recentBLEPositions.allSatisfy {
+                    hypot($0.x - centroid.x, $0.y - centroid.y) < (tolerance)
+                }
+
+                if maxDeviation {
+                    //log.debug("Changing still position from: \(self.fusedPosition.x), \(self.fusedPosition.y) to: \(centroid.x), \(centroid.y)")
+                    return centroid
+                }
+            }
+
+            // Default: don’t move
+            return predicted  // same as the last fusedPosition
         }
 
         let distance = hypot(predicted.x - ble.x, predicted.y - ble.y)
         let maxSnapDistance = 2.0 * settings.worldScale
 
         // Time since last BLE-based fusion
-        let timePassed = Date().timeIntervalSince(lastFusedUpdate)
-        let updateRate = 1.0  // assumes 1Hz fusion
+        //let timePassed = Date().timeIntervalSince(lastFusedUpdate)
+        //let updateRate = 1.0  // assumes 1Hz fusion
 
         var bleWeight: Double = 0.0
 
-        // --- BLE sanity check (same as isBLEJumpReasonable) ---
-        let bleInBounds =
-            ble.x >= 0 && ble.x <= settings.worldSize.width && ble.y >= 0
-            && ble.y <= settings.worldSize.height
-
-        let distanceFromLast = hypot(
-            ble.x - fusedPrevious.x, ble.y - fusedPrevious.y)
-        let maxJumpDistance = 5 * settings.worldScale
-
-        let isBLEJumpReasonable: Bool = {
-            if !bleInBounds { return false }
-            if timePassed > (6 * updateRate) { return true }
-            if timePassed > (3 * updateRate),
-                distanceFromLast <= maxJumpDistance * 2
-            {
-                return true
-            }
-            return distanceFromLast <= maxJumpDistance
-        }()
-
-        // --- Weight calculation ---
-        if isBLEJumpReasonable {
-            if distance < maxSnapDistance {
-                let proximityRatio = 1.0 - (distance / maxSnapDistance)
-                bleWeight =
-                    calculateBLEWeight(confidence: confidence) * proximityRatio
-            } else {
-                // fallback correction weight to rein in drift
-                bleWeight = 0.25
-            }
+        if distance < maxSnapDistance && false {
+            let proximityRatio = 1.0 - (distance / maxSnapDistance)
+            bleWeight = calculateBLEWeight(confidence: confidence) * proximityRatio
+        } else {
+            // fallback correction weight to rein in drift
+            bleWeight = 0.25
         }
-
+        bleWeight = 0.5
         let pdrWeight = 1.0 - bleWeight
-
+        
+        print(bleWeight, pdrWeight)
+        
         let fusedX = predicted.x * pdrWeight + ble.x * bleWeight
         let fusedY = predicted.y * pdrWeight + ble.y * bleWeight
 
-        return CGPoint(x: fusedX, y: fusedY)
+        let fused = CGPoint(x: fusedX, y: fusedY)
+
+        guard fused.x >= 0,
+            fused.y >= 0,
+            fused.x <= settings.worldSize.width,
+            fused.y <= settings.worldSize.height
+        else {
+            let clamped = CGPoint(
+                x: min(max(0, fused.x), settings.worldSize.width),
+                y: min(max(0, fused.y), settings.worldSize.height)
+            )
+            return clamped  // make sure published pos is inside the map
+        }
+
+        return fused
     }
 
     func calculateBLEWeight(confidence: Int) -> Double {
@@ -333,7 +327,7 @@ final class PositionFusionManager: ObservableObject {
     private func isBLEJumpReasonable(newBLE: CGPoint) -> Bool {
         let last = fusedPosition
         let distance = hypot(newBLE.x - last.x, newBLE.y - last.y)
-        let maxDistance = 5 * settings.worldScale
+        let maxDistance = 10 * settings.worldScale
         let timePassed = Date().timeIntervalSince(lastFusedPositionUpdateTime)
         let updateRate = 1.0
 
@@ -346,12 +340,13 @@ final class PositionFusionManager: ObservableObject {
         }
 
         // If BLE update is very old, allow large jumps
-        if timePassed > (6 * updateRate) {
+        if timePassed > (5 * updateRate) {
+            print("very old")
             return true
         }
 
         // If moderately old, allow larger margin
-        if timePassed > (3 * updateRate), distance <= maxDistance * 2 {
+        if timePassed > (2 * updateRate), distance <= maxDistance * 2 {
             return true
         }
 
@@ -374,9 +369,7 @@ final class PositionFusionManager: ObservableObject {
                     ($0.lastSeen ?? .distantPast)
                         > ($1.lastSeen ?? .distantPast)
                 }
-
             log.debug("🔍 Known beacons (most recent first):")
-
             for beacon in sortedBeacons {
                 guard let seen = beacon.lastSeen else {
                     log.debug(
@@ -384,11 +377,9 @@ final class PositionFusionManager: ObservableObject {
                     )
                     continue
                 }
-
                 let age = now.timeIntervalSince(seen)
                 let rssi = beacon.rssi
                 let name = beacon.name
-
                 log.debug(
                     "🛰️ \(name) | RSSI: \(rssi) dBm | Seen \(String(format: "%.2f", age))s ago"
                 )

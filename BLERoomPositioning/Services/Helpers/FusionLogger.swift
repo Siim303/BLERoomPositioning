@@ -6,21 +6,22 @@
 //
 
 import Foundation
+
 class FusionLogger {
     static let shared = FusionLogger()
 
     private let filename = "fusion_log.csv"
     private var fileHandle: FileHandle?
-    
+
     private var loggingEnabled = true
 
-
     func setLogging(enabled: Bool) {
-            loggingEnabled = enabled
-        }
-    
+        loggingEnabled = enabled
+    }
+
     private var fileURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            .first!
             .appendingPathComponent(filename)
     }
 
@@ -31,25 +32,30 @@ class FusionLogger {
 
     private func openFile() {
         if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try? "source,timestamp,pred_x,pred_y,beacon_count,b1_name,b1_rssi,b1_dist,...\n".write(to: fileURL, atomically: true, encoding: .utf8)
+            try?
+                "source,timestamp,pred_x,pred_y,beacon_count,b1_name,b1_rssi,b1_dist,...\n"
+                .write(to: fileURL, atomically: true, encoding: .utf8)
         }
         fileHandle = try? FileHandle(forWritingTo: fileURL)
         fileHandle?.seekToEndOfFile()
     }
-    
+
     private func deleteOldLogFile() {
         let manager = FileManager.default
         if manager.fileExists(atPath: fileURL.path) {
             do {
                 try manager.removeItem(at: fileURL)
-                print("🗑️ Old log file deleted")
+                print("Old log file deleted")
             } catch {
-                print("❌ Failed to delete old log file: \(error.localizedDescription)")
+                print(
+                    "Failed to delete old log file: \(error.localizedDescription)"
+                )
             }
         }
     }
 
-    func logBLEFrame(beacons: [BLEDevice], distances: [Double], fused: CGPoint) {
+    func logBLEFrame(beacons: [BLEDevice], distances: [Double], fused: CGPoint)
+    {
         guard loggingEnabled else { return }
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -57,7 +63,8 @@ class FusionLogger {
 
         for (index, beacon) in beacons.enumerated() {
             let dist = distances[index]
-            row += ",\(beacon.name),\(beacon.rssi),\(String(format: "%.2f", dist))"
+            row +=
+                ",\(beacon.name),\(beacon.rssi),\(String(format: "%.2f", dist))"
         }
 
         row += "\n"
@@ -66,7 +73,7 @@ class FusionLogger {
             fileHandle?.write(data)
         }
     }
-    
+
     func logPDRFrame(fused: CGPoint) {
         guard loggingEnabled else { return }
 
@@ -77,10 +84,10 @@ class FusionLogger {
             fileHandle?.write(data)
         }
     }
-    
+
     func logFusedFrame(fused: CGPoint) {
         guard loggingEnabled else { return }
-        
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let row = "Fused,\(timestamp),\(fused.x),\(fused.y),0\n"
 
@@ -88,8 +95,6 @@ class FusionLogger {
             fileHandle?.write(data)
         }
     }
-    
-
 
     /// Flush + close file for export, then reopen so logging can continue
     func prepareForExport() -> URL? {

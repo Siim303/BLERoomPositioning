@@ -4,7 +4,6 @@
 //
 //  Created by Siim Turban on 10.05.2025.
 //
-
 import SwiftUI
 import UIKit
 
@@ -22,9 +21,12 @@ struct LogExporter: UIViewControllerRepresentable {
         } else {
             print("❌ Failed to read file data")
         }
-        let activityVC = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        let activityVC = UIActivityViewController(
+            activityItems: [fileURL], applicationActivities: nil)
         return activityVC
     }
 
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+    func updateUIViewController(
+        _ uiViewController: UIActivityViewController, context: Context
+    ) {}
 }

@@ -20,7 +20,8 @@ struct ContentView: View {
     // Keep your view model as a StateObject.
     @StateObject private var viewModel = RoomPositioningViewModel()
     
-    @State private var selectedMap: MapOption = .house //.delta2ndFloor
+    /// set initial map onto screen
+    @State private var selectedMap: MapOption =  .delta2ndFloor //.house
 
        
     var body: some View {
