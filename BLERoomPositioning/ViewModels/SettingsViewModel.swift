@@ -9,8 +9,8 @@ import SwiftUI
 
 class SettingsViewModel: ObservableObject {
     // Positioning toggles
-    @Published var isDeadReckoningEnabled: Bool = false
-    @Published var isConfidenceEnabled: Bool = false
+    @Published var isDeadReckoningEnabled: Bool = true
+    @Published var isConfidenceEnabled: Bool = true
     @Published var isBeaconSimulationEnabled: Bool = false
     @Published var isBLEPositioningEnabled: Bool = true
     
@@ -25,4 +25,5 @@ class SettingsViewModel: ObservableObject {
     
     // World settings
     @Published var worldScale: Double = 250.0
+    @Published var worldSize: CGSize = CGSize(width: 4000, height: 4000)
 }

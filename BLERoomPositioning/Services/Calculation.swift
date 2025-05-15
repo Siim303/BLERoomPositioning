@@ -60,7 +60,7 @@ extension PositionCalculator {
             devDistances += "\(devices[i].name): \((distances[i]*1000).rounded()/1000) | "
         }
         /// This whole line to just cut off 3 last characters of a string is Swift ¯\_(ツ)_/¯
-        log.debug("\(devDistances[devDistances.startIndex..<devDistances.index(devDistances.endIndex, offsetBy: -3)])")
+        //log.debug("\(devDistances[devDistances.startIndex..<devDistances.index(devDistances.endIndex, offsetBy: -3)])")
         
         let weights   = devices.map { d -> Double in
             let norm = (Double(d.rssi) + 100) / 70.0
@@ -109,7 +109,7 @@ extension PositionCalculator {
 
 
         // Log again with fused position
-        FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: pos)
+        FusionLogger.shared.logBLEFrame(beacons: devices, distances: distances, fused: pos)
         
         return pos
     }
@@ -133,7 +133,7 @@ struct PositionCalculator {
             // Single beacon → just return the beacon’s own coordinates.
             //log.info("1 beacons: \(devices[0].position.x), \(devices[0].position.y)")
             let distances: [Double] = [PositionMath.rssiToDistance(rssi: devices[0].rssi, txPower: txPower, pathLossExponent: pathLossExponent)]
-            FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: devices[0].position)
+            FusionLogger.shared.logBLEFrame(beacons: devices, distances: distances, fused: devices[0].position)
             
             return PositionResult(position: devices[0].position,
                                   confidence: confidence)
@@ -151,7 +151,7 @@ struct PositionCalculator {
             
             let distances: [Double] = [d1, d2]
             
-            FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: p)
+            FusionLogger.shared.logBLEFrame(beacons: devices, distances: distances, fused: p)
 
             
             //log.info("2 beacons: \(p.x), \(p.y)")

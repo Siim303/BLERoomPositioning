@@ -31,7 +31,7 @@ class FusionLogger {
 
     private func openFile() {
         if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try? "timestamp,fused_x,fused_y,beacon_count,b1_name,b1_rssi,b1_dist,...\n".write(to: fileURL, atomically: true, encoding: .utf8)
+            try? "source,timestamp,pred_x,pred_y,beacon_count,b1_name,b1_rssi,b1_dist,...\n".write(to: fileURL, atomically: true, encoding: .utf8)
         }
         fileHandle = try? FileHandle(forWritingTo: fileURL)
         fileHandle?.seekToEndOfFile()
@@ -49,11 +49,11 @@ class FusionLogger {
         }
     }
 
-    func logFusionFrame(beacons: [BLEDevice], distances: [Double], fused: CGPoint) {
+    func logBLEFrame(beacons: [BLEDevice], distances: [Double], fused: CGPoint) {
         guard loggingEnabled else { return }
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
-        var row = "\(timestamp),\(fused.x),\(fused.y),\(beacons.count)"
+        var row = "BLE,\(timestamp),\(fused.x),\(fused.y),\(beacons.count)"
 
         for (index, beacon) in beacons.enumerated() {
             let dist = distances[index]
@@ -66,6 +66,30 @@ class FusionLogger {
             fileHandle?.write(data)
         }
     }
+    
+    func logPDRFrame(fused: CGPoint) {
+        guard loggingEnabled else { return }
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let row = "PDR,\(timestamp),\(fused.x),\(fused.y),0\n"
+
+        if let data = row.data(using: .utf8) {
+            fileHandle?.write(data)
+        }
+    }
+    
+    func logFusedFrame(fused: CGPoint) {
+        guard loggingEnabled else { return }
+        
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let row = "Fused,\(timestamp),\(fused.x),\(fused.y),0\n"
+
+        if let data = row.data(using: .utf8) {
+            fileHandle?.write(data)
+        }
+    }
+    
+
 
     /// Flush + close file for export, then reopen so logging can continue
     func prepareForExport() -> URL? {

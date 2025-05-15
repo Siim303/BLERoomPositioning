@@ -17,6 +17,8 @@ struct RoomView: View {
     let worldScale: CGFloat
     let headingDeg: Double
     let mapOffsetDeg: Double = -66.0
+    
+    let animationDuration: Double = 0.6
 
     // Now tracking the UIScrollView properties.
     @State private var contentOffset: CGPoint = .zero
@@ -106,7 +108,7 @@ struct RoomView: View {
                     }
                     .frame(width: 0, height: 0)  // Prevent layout shift
                     .position(pos)  // ✅ now this only affects positioning
-                    .animation(.easeInOut(duration: 0.3), value: pos)
+                    .animation(.easeInOut(duration: animationDuration), value: pos)
                 }
 
             }.border(.blue)
@@ -200,7 +202,7 @@ struct RoomView: View {
         let newOffset = CGPoint(
             x: scaledUserX - viewCenter.x, y: scaledUserY - viewCenter.y)
 
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(.easeInOut(duration: animationDuration)) {
             contentOffset = newOffset
         }
     }

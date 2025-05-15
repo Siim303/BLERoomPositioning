@@ -45,7 +45,7 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     private var lastStepTimestamp: TimeInterval = 0
 
     // MARK: – Tuning
-    var fixedStepLength: Double = 0.70  // m – quick start; can swap in dynamic value
+    var fixedStepLength: Double = 0.45  // m – quick start; can swap in dynamic value
     var zeroHeadingOffset: Double = 0  // user‑triggered calibration (deg)
 
     // MARK: – Private stuff
@@ -293,7 +293,7 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         let newSteps = stepCount - lastStepCount
         guard newSteps > 0 else { return nil }
         
-        let θ = (headingDeg) * .pi / 180.0
+        let θ = (headingDeg - 66) * .pi / 180.0
         let dx = cos(θ) * stepLength * Double(newSteps)
         let dy = sin(θ) * stepLength * Double(newSteps)
 
