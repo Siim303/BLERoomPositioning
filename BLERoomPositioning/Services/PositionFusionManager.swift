@@ -180,7 +180,7 @@ final class PositionFusionManager: ObservableObject {
                 devices: recentDevices,
                 txPower: txPower,
                 pathLossExponent: pathLoss,
-                maxBeacons: 8/// Set value between 3 and inf/nil, if set to under 3 uses centroid
+                maxBeacons: 6/// Set value between 3 and inf/nil, if set to under 3 uses centroid
             ) {
                 let blePos = result.position
                 let confidence = result.confidence
@@ -217,6 +217,8 @@ final class PositionFusionManager: ObservableObject {
                 fusedPrevious: fusedPosition,
                 lastFusedUpdate: lastFusedPositionUpdateTime
             )
+            
+            lastFusedPositionUpdateTime = Date()
 
         } else if settings.isDeadReckoningEnabled
             && settings.isBLEPositioningEnabled
@@ -225,13 +227,15 @@ final class PositionFusionManager: ObservableObject {
             let fusedX = (predicted.x + bLEPredicted.x) / 2
             let fusedY = (predicted.y + bLEPredicted.y) / 2
             fusedPosition = CGPoint(x: fusedX, y: fusedY)
+            lastFusedPositionUpdateTime = Date()
+
         } else {
             //log.debug("here")
             fusedPosition =
                 settings.isBLEPositioningEnabled ? bLEPredicted : predicted
+
         }
         
-        lastFusedPositionUpdateTime = Date()
         FusionLogger.shared.logFusedFrame(fused: fusedPosition)
 
     }
@@ -247,70 +251,72 @@ final class PositionFusionManager: ObservableObject {
         lastFusedUpdate: Date
     ) -> CGPoint {
 
-        /// No movement → suppress random  BLE pos values
-        if stepCountDelta == 0 {
-            /// Check BLE clustering, meaning that if last 4 positions are in a similar spot then move the pos there
-            if recentBLEPositions.count == bleHistoryLimit {
-                let avgX = recentBLEPositions.map { $0.x }.reduce(0, +) / CGFloat(bleHistoryLimit)
-                let avgY = recentBLEPositions.map { $0.y }.reduce(0, +) / CGFloat(bleHistoryLimit)
-                let centroid = CGPoint(x: avgX, y: avgY)
-                let tolerance = 0.3 * settings.worldScale // Number in meters
-
-                // Check if all points are within tolerance
-                let maxDeviation = recentBLEPositions.allSatisfy {
-                    hypot($0.x - centroid.x, $0.y - centroid.y) < (tolerance)
-                }
-
-                if maxDeviation {
-                    //log.debug("Changing still position from: \(self.fusedPosition.x), \(self.fusedPosition.y) to: \(centroid.x), \(centroid.y)")
-                    return centroid
-                }
-            }
-
-            // Default: don’t move
-            return predicted  // same as the last fusedPosition
-        }
-
-        let distance = hypot(predicted.x - ble.x, predicted.y - ble.y)
         let maxSnapDistance = 2.0 * settings.worldScale
+        let fusedDistanceFromBLE = hypot(fusedPrevious.x - ble.x, fusedPrevious.y - ble.y)
 
-        // Time since last BLE-based fusion
-        //let timePassed = Date().timeIntervalSince(lastFusedUpdate)
-        //let updateRate = 1.0  // assumes 1Hz fusion
+        // 🧠 CASE 1: BLE is stable AND fused position has drifted too far
+        if let stableBLE = isBLEClusterStable(),
+           fusedDistanceFromBLE > maxSnapDistance {
 
-        var bleWeight: Double = 0.0
-
-        if distance < maxSnapDistance && false {
-            let proximityRatio = 1.0 - (distance / maxSnapDistance)
-            bleWeight = calculateBLEWeight(confidence: confidence) * proximityRatio
-        } else {
-            // fallback correction weight to rein in drift
-            bleWeight = 0.25
+            log.debug("BLE override: Fused too far from stable BLE cluster (dist \(fusedDistanceFromBLE))")
+            return stableBLE
         }
-        bleWeight = 0.5
+
+        // 🧠 CASE 2: BLE is stable — blend gently toward cluster
+        if let stableBLE = isBLEClusterStable() {
+            let bleWeight: CGFloat = 0.2
+            let pdrWeight = 1.0 - bleWeight
+
+            return CGPoint(
+                x: predicted.x * pdrWeight + stableBLE.x * bleWeight,
+                y: predicted.y * pdrWeight + stableBLE.y * bleWeight
+            )
+        }
+
+        // 🧠 CASE 3: fallback blend based on distance/proximity
+        var bleWeight: CGFloat = 0.25  // default pull
+        if distanceBetween(predicted, ble) < maxSnapDistance {
+            let proximityRatio = 1.0 - (distanceBetween(predicted, ble) / maxSnapDistance)
+            bleWeight = CGFloat(calculateBLEWeight(confidence: confidence)) * proximityRatio
+        }
+
         let pdrWeight = 1.0 - bleWeight
-        
-        print(bleWeight, pdrWeight)
-        
         let fusedX = predicted.x * pdrWeight + ble.x * bleWeight
         let fusedY = predicted.y * pdrWeight + ble.y * bleWeight
-
         let fused = CGPoint(x: fusedX, y: fusedY)
 
-        guard fused.x >= 0,
-            fused.y >= 0,
-            fused.x <= settings.worldSize.width,
-            fused.y <= settings.worldSize.height
-        else {
-            let clamped = CGPoint(
+        // Clamp inside map bounds
+        if fused.x < 0 || fused.y < 0 || fused.x > settings.worldSize.width || fused.y > settings.worldSize.height {
+            return CGPoint(
                 x: min(max(0, fused.x), settings.worldSize.width),
                 y: min(max(0, fused.y), settings.worldSize.height)
             )
-            return clamped  // make sure published pos is inside the map
         }
 
         return fused
     }
+    
+    private func distanceBetween(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        return hypot(a.x - b.x, a.y - b.y)
+    }
+
+    private func isBLEClusterStable() -> CGPoint? {
+        guard recentBLEPositions.count >= bleHistoryLimit else { return nil }
+
+        // Compute centroid
+        let avgX = recentBLEPositions.map(\.x).reduce(0, +) / CGFloat(recentBLEPositions.count)
+        let avgY = recentBLEPositions.map(\.y).reduce(0, +) / CGFloat(recentBLEPositions.count)
+        let centroid = CGPoint(x: avgX, y: avgY)
+
+        // Max radius from center to consider stable (e.g. 0.8m)
+        let tolerance = 0.8 * settings.worldScale
+        let allWithin = recentBLEPositions.allSatisfy {
+            hypot($0.x - centroid.x, $0.y - centroid.y) <= tolerance
+        }
+
+        return allWithin ? centroid : nil
+    }
+
 
     func calculateBLEWeight(confidence: Int) -> Double {
         switch confidence {
@@ -327,7 +333,7 @@ final class PositionFusionManager: ObservableObject {
     private func isBLEJumpReasonable(newBLE: CGPoint) -> Bool {
         let last = fusedPosition
         let distance = hypot(newBLE.x - last.x, newBLE.y - last.y)
-        let maxDistance = 10 * settings.worldScale
+        let maxDistance = 12 * settings.worldScale
         let timePassed = Date().timeIntervalSince(lastFusedPositionUpdateTime)
         let updateRate = 1.0
 

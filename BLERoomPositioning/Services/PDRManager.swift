@@ -41,7 +41,7 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     private var lastStepTimestamp: TimeInterval = 0
 
     // MARK: – Tuning
-    var fixedStepLength: Double = 2 // m – quick start; can swap in dynamic value
+    var fixedStepLength: Double = 1.4 // m – quick start; can swap in dynamic value
     var zeroHeadingOffset: Double = 0  // user‑triggered calibration (deg)
 
     // MARK: – Private stuff

@@ -65,17 +65,17 @@ extension PositionCalculator {
         if devices.count > 3 {
             filtered = devices.filter { $0.rssi > -90 }
         }
-
+        //print(devices)
         // Still need at least 3 after filtering
-        guard filtered.count >= 3 else { return nil }
+        //guard filtered.count >= 3 else { return nil }
         
-        var devices = filtered
+        //let devices = filtered
         
         /// Distances (dᵢ) and weights (wᵢ = RSSI strength in [0,1])
         let distances = devices.map {
             PositionMath.rssiToDistance(
                 rssi: $0.rssi, txPower: txPower,
-                pathLossExponent: pathLossExponent)
+                pathLossExponent: pathLossExponent)  * 30
         }
         var devDistances = ""
         for i in 0..<devices.count {
@@ -86,10 +86,10 @@ extension PositionCalculator {
         log.debug("\(devDistances[devDistances.startIndex..<devDistances.index(devDistances.endIndex, offsetBy: -3)])")
 
         // TODO: Maybe to remove?
-        //let weights = devices.map { d -> Double in
-        //    let norm = (Double(d.rssi) + 100) / 70.0
-        //    return max(0.1, min(1.0, norm))
-        //}
+        let weights = devices.map { d -> Double in
+            let norm = (Double(d.rssi) + 100) / 70.0
+            return max(0.1, min(1.0, norm))
+        }
         //log.debug("Weights: \(weights)")
 
         /// Use the first beacon as the reference
@@ -109,7 +109,7 @@ extension PositionCalculator {
             let xi = Double(devices[i].position.x)
             let yi = Double(devices[i].position.y)
             let di = distances[i]
-            let w =  1.0 // weights[i] //
+            let w =  1.0 // weights[i] // 1.0
 
             let a0 = 2 * (xi - x0)
             let a1 = 2 * (yi - y0)
@@ -135,6 +135,10 @@ extension PositionCalculator {
 
         let pos = CGPoint(x: CGFloat(x), y: CGFloat(y))
 
+        if y < 50 || y > 4000 || x > 3000 || x < 0{
+            return nil
+        }
+        
         /// Log with BLE position
         FusionLogger.shared.logBLEFrame(
             beacons: devices, distances: distances, fused: pos)
