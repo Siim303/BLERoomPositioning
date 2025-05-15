@@ -16,6 +16,7 @@ struct RoomView: View {
     let designSize: CGSize  // e.g., CGSize(width: 1000, height: 1000)
     let worldScale: CGFloat
     let headingDeg: Double
+    let mapOffsetDeg: Double = -66.0
 
     // Now tracking the UIScrollView properties.
     @State private var contentOffset: CGPoint = .zero

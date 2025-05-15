@@ -13,7 +13,8 @@ struct IdentifiableURL: Identifiable {
 
 struct SettingsView: View {
     @ObservedObject var viewModel: SettingsViewModel
-
+    @ObservedObject var positioningViewModel: RoomPositioningViewModel
+    
     @State private var showExporter = false
     @State private var logFile: IdentifiableURL? = nil
 
@@ -35,6 +36,7 @@ struct SettingsView: View {
                 }
 
                 Section(header: Text("Calibration")) {
+                    /*
                     VStack(alignment: .leading) {
                         Text(
                             "Accelerometer Sensitivity: \(String(format: "%.1f", viewModel.accelerometerSensitivity))"
@@ -42,6 +44,9 @@ struct SettingsView: View {
                         Slider(
                             value: $viewModel.accelerometerSensitivity,
                             in: 10...100, step: 1)
+                    }*/
+                    Button("Calibrate heading") {
+                        positioningViewModel.calibrateHeading()
                     }
                     VStack(alignment: .leading) {
                         Text(

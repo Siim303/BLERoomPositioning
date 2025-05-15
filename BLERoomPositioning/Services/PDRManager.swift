@@ -23,11 +23,11 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     func sessionDidBecomeInactive(_ session: WCSession) {
         log.info("WCSession became inactive")
     }
-    
+
     func sessionDidDeactivate(_ session: WCSession) {
         log.info("WCSession re‑activated")
     }
-    
+
     enum Source { case phone, watch }
     private(set) var source: Source = .phone  // current sensor origin
 
@@ -38,6 +38,12 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     @Published private(set) var stepCount: Int = 0
     @Published private(set) var stepLength: Double = 0  // last est. metres
 
+    //let stepDeltaPublisher = PassthroughSubject<CGPoint, Never>()
+    private var lastStepCountForFusion: Int = 0
+    
+    private var lastZ: Double = 0
+    private var lastStepTimestamp: TimeInterval = 0
+
     // MARK: – Tuning
     var fixedStepLength: Double = 0.70  // m – quick start; can swap in dynamic value
     var zeroHeadingOffset: Double = 0  // user‑triggered calibration (deg)
@@ -47,14 +53,18 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     private let pedometer = CMPedometer()
     private var lastStepCount: Int = 0
     private let q = OperationQueue()
+    private var rawHeading: Double = 0
 
     // --- WatchConnectivity ---
     private let wc = WCSession.default
 
     override init() {
         super.init()
-        log.info("WcSession.isSupported: \(WCSession.isSupported().description)")
-        log.info("WC paired: \(self.wc.isPaired), WC app installed: \(self.wc.isWatchAppInstalled)")
+        log.info(
+            "WcSession.isSupported: \(WCSession.isSupported().description)")
+        log.info(
+            "WC paired: \(self.wc.isPaired), WC app installed: \(self.wc.isWatchAppInstalled)"
+        )
         if WCSession.isSupported(), wc.isPaired, wc.isWatchAppInstalled {
             log.info("Setting up WatchConnectivity")
             wc.delegate = self
@@ -68,7 +78,9 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         switch source {
         case .phone:
             startHeadingUpdates()
-            startStepUpdates()
+            //startStepUpdates()
+            startAccelerometerUpdates()
+            calibrateHeading()
         case .watch:
             // Nothing local; just integrate incoming vectors
             break
@@ -101,7 +113,16 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
     ) {}
 
     // Call from a “Calibrate” button so map north == device forward
-    func calibrateHeading() { zeroHeadingOffset = headingDeg }
+    func calibrateHeading() {
+        if zeroHeadingOffset == 0.0 {
+            zeroHeadingOffset = 103
+        }
+        else {
+            zeroHeadingOffset = rawHeading
+        }
+        //zeroHeadingOffset = 180
+        log.info("New zeroHeadingOffset = \(self.zeroHeadingOffset)")
+    }
 
     // MARK: – Heading
     private func startHeadingUpdates() {
@@ -120,14 +141,17 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
             guard let self, let dm else { return }
             let raw = dm.heading  // degrees
             DispatchQueue.main.async {
-                self.headingDeg = raw
+                self.rawHeading = raw
+                self.headingDeg = raw - self.zeroHeadingOffset
             }
 
         }
-        log.debug("Heading updates started.")
+        
+        log.info("Heading updates started.")
 
     }
 
+    /*
     // MARK: – Step detection + position update
     private func startStepUpdates() {
 
@@ -181,6 +205,56 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         }
 
     }
+*/
+    private func startAccelerometerUpdates() {
+        guard motion.isAccelerometerAvailable else {
+            log.error("Accelerometer not available")
+            return
+        }
+
+        motion.accelerometerUpdateInterval = 1.0 / 10.0  // 50 Hz
+
+        motion.startAccelerometerUpdates(to: q) { [weak self] data, _ in
+            guard let self, let data = data else { return }
+
+            let z = data.acceleration.z
+            //log.debug("New accelerometer data: \(z)")
+            self.detectStepFromZ(z)
+        }
+        log.info("Accelerometer updates started.")
+    }
+
+    private func detectStepFromZ(_ z: Double) {
+        let now = Date().timeIntervalSince1970
+        let deltaZ = z - lastZ
+
+        // You can tune this threshold and debounce time
+        let spikeThreshold = 0.4
+        let minTimeBetweenSteps = 0.4  // seconds
+
+        if deltaZ > spikeThreshold, now - lastStepTimestamp > minTimeBetweenSteps {
+            DispatchQueue.main.async {
+                self.stepCount += 1
+                self.stepLength = self.fixedStepLength  // you could tune dynamically if needed
+            }
+            lastStepTimestamp = now
+            //log.debug("✅ Step detected: ΔZ = \(deltaZ), stepCount = \(self.stepCount)")
+        }
+
+        lastZ = z
+    }
+
+    func consumeStepDelta() -> CGPoint? {
+        let deltaSteps = stepCount - lastStepCountForFusion
+        guard deltaSteps > 0 else { return nil }
+
+        let θ = (headingDeg - zeroHeadingOffset) * .pi / 180.0
+        let dx = cos(θ) * stepLength * Double(deltaSteps)
+        let dy = sin(θ) * stepLength * Double(deltaSteps)
+
+        lastStepCountForFusion = stepCount
+        return CGPoint(x: dx, y: dy)
+    }
 
     /* TODO: To be deleted
     // MARK: – Core PDR integration
@@ -194,9 +268,10 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         log.debug("pos: \(self.position.x), \(self.position.y)")
 
     }*/
-    
+
+    /*
     func computeDeadReckoningUpdate(from current: CGPoint) -> PDRUpdate? {
-        
+
         guard stepCount > 0 else {
             //log.error("step count 0, can't calculate pdr update")
             return nil
@@ -206,17 +281,19 @@ final class PDRManager: NSObject, ObservableObject, WCSessionDelegate {
         let dx = cos(θ) * stepLength
         let dy = sin(θ) * stepLength
 
-        let delta = CGPoint(x: dx * Double(stepCount), y: dy * Double(stepCount))
-        let newPosition = CGPoint(x: current.x + delta.x, y: current.y + delta.y)
+        let delta = CGPoint(
+            x: dx * Double(stepCount), y: dy * Double(stepCount))
+        let newPosition = CGPoint(
+            x: current.x + delta.x, y: current.y + delta.y)
 
         return PDRUpdate(position: newPosition, steps: stepCount)
-    }
-    
+    }*/
+
     func computeStepDelta(from lastStepCount: Int) -> CGPoint? {
         let newSteps = stepCount - lastStepCount
         guard newSteps > 0 else { return nil }
-
-        let θ = (headingDeg - zeroHeadingOffset) * .pi / 180.0
+        
+        let θ = (headingDeg) * .pi / 180.0
         let dx = cos(θ) * stepLength * Double(newSteps)
         let dy = sin(θ) * stepLength * Double(newSteps)
 

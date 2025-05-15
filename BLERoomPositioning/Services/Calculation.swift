@@ -67,7 +67,7 @@ extension PositionCalculator {
             return max(0.1, min(1.0, norm))
         }
         
-        log.debug("Weights: \(weights)")
+        //log.debug("Weights: \(weights)")
         
         // Use the first beacon as the reference
         let ref = devices[0]
@@ -81,7 +81,7 @@ extension PositionCalculator {
             let xi = Double(devices[i].position.x)
             let yi = Double(devices[i].position.y)
             let di = distances[i]
-            let w  = weights[i]
+            let w  = 1.0 // weights[i]
 
             let a0 = 2 * (xi - x0)
             let a1 = 2 * (yi - y0)
@@ -105,6 +105,8 @@ extension PositionCalculator {
         let y = inv01 * T0 + inv11 * T1
         
         let pos = CGPoint(x: CGFloat(x), y: CGFloat(y))
+        //let pos = CGPoint(x: CGFloat(x + x0), y: CGFloat(y + y0))
+
 
         // Log again with fused position
         FusionLogger.shared.logFusionFrame(beacons: devices, distances: distances, fused: pos)

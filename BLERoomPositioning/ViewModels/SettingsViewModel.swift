@@ -22,4 +22,7 @@ class SettingsViewModel: ObservableObject {
     
     // Debugging
     @Published var isDebugLoggingEnabled: Bool = false
+    
+    // World settings
+    @Published var worldScale: Double = 250.0
 }

@@ -20,7 +20,7 @@ struct ContentView: View {
     // Keep your view model as a StateObject.
     @StateObject private var viewModel = RoomPositioningViewModel()
     
-    @State private var selectedMap: MapOption = .delta2ndFloor
+    @State private var selectedMap: MapOption = .house //.delta2ndFloor
 
        
     var body: some View {
@@ -91,7 +91,7 @@ struct ContentView: View {
                     Image(systemName: "gear")
                 })
                 .sheet(isPresented: $viewModel.showingSettings) {
-                    SettingsView(viewModel: settings)
+                    SettingsView(viewModel: settings, positioningViewModel: viewModel)
                 }
             )/*
             .navigationBarItems(trailing: Button(action: {

@@ -102,6 +102,11 @@ class RoomPositioningViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
+    func calibrateHeading() {
+        pdrManager.calibrateHeading()
+    }
+
+    
     // Sample binding setup for BLE data and sensor data updates.
     private func setupBindings() {
         // Send BLE updates to fusion class

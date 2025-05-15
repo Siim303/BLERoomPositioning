@@ -27,11 +27,10 @@ final class PositionFusionManager: ObservableObject {
     // MARK: - Dependencies
 
     private let settings: SettingsViewModel  // Provides toggles for DR, BLE, confidence, etc.
-    private let pdr: PDRManager
-
+    let pdr: PDRManager
 
     // MARK: - State
-    
+
     private let log = Logger(subsystem: "FusedPosition", category: "core")
 
     private var lastBLEPosition: CGPoint?  // Last known good BLE fix
@@ -43,10 +42,10 @@ final class PositionFusionManager: ObservableObject {
     private var knownBLEDevices: [BeaconKey: BLEDevice] = [:]  // Recent beacons with latest data (Meaning that var: bleDevices updates this variable)
 
     private var lastAppliedStepCount: Int = 0
-    
+
     private var cancellables = Set<AnyCancellable>()  // For Combine subscriptions
-    
-    private var bleTimeout: Double = 2.0 // We only use beacons that have had a signal in the past x time
+
+    private var bleTimeout: Double = 2.0  // We only use beacons that have had a signal in the past x time
 
     // MARK: - Timer
 
@@ -61,6 +60,9 @@ final class PositionFusionManager: ObservableObject {
         self.pdr = pdrManager
         observeSettings()
         startPredictionLoop()
+        /// For testing only, to delete
+        fusedPosition = CGPoint(x: 800, y: 800)
+        //lastAppliedStepCount = pdr.stepCount
     }
 
     // MARK: - Public Input Methods
@@ -71,28 +73,14 @@ final class PositionFusionManager: ObservableObject {
         // Store for later use (e.g. in confidence or correction logic)
         self.bleDevices = devices
         //print(devices)
-        for device in devices { //TODO: Test if this actually updates the known beacons correctly
+        for device in devices {  //TODO: Test if this actually updates the known beacons correctly
             let key = BeaconKey(uuid: device.uuid, name: device.name)
             if device.rssi == 0 {
                 continue
             }
             knownBLEDevices[key] = device  // updates rssi, lastSeen, etc.
         }
-        //log.debug("List of known BLE devices:\(self.knownBLEDevices)")
-        /* TODO: Delete this as we don't want to strain app with constant calculations
-        // Try to compute a position from these devices
-        guard settings.isBLEPositioningEnabled else { return }
-
-        if let result = PositionCalculator.calculate(devices: devices) {
-            let blePosition = result.position
-            let confidence = result.confidence  // store if you plan to use confidence weighting later
-
-            // Store for correction/prediction comparison
-            self.lastBLEPosition = blePosition
-
-            // Optionally apply immediately (if not doing time-loop-based fusion)
-            // fusedPosition = blePosition  // ← skip this for now, we'll let updateFusedPosition() handle it
-        }*/
+        
     }
     /// This returns only BLE devices that have been seen in the past x time
     private func recentBLEDevices() -> [BLEDevice] {
@@ -119,7 +107,7 @@ final class PositionFusionManager: ObservableObject {
             }
             .store(in: &cancellables)
     }
-    
+
     private func restartPredictionLoop(with interval: TimeInterval) {
         predictionTimer?.cancel()
 
@@ -136,7 +124,7 @@ final class PositionFusionManager: ObservableObject {
         // Runs every 0.1s or so;
         // Cancel any existing timer first
         predictionTimer?.cancel()
-        
+
         let updateFrequency = settings.positionUpdateFrequency
 
         // Use a Combine timer that fires on the main thread
@@ -160,41 +148,54 @@ final class PositionFusionManager: ObservableObject {
         // Kalman-style prediction + correction logic lives here
         // as a start for testing purposes print out each known beacon sorted by last seen first, (also print beacon time since seen and rssi and name ofc)
         let now = Date()
-        let dt = now.timeIntervalSince(lastUpdateTime)
+        //let dt = now.timeIntervalSince(lastUpdateTime)
         lastUpdateTime = now
-        
+
         var predicted = fusedPosition
         var bLEPredicted = fusedPosition
-        
+
         //debugBLEVisibility(now: now)
-        
+
         // --- PDR prediction ---
         if settings.isDeadReckoningEnabled {
+            //log.debug("in pdr if clause, step count: \(self.pdr.stepCount)")
             if let delta = pdr.computeStepDelta(from: lastAppliedStepCount) {
-                predicted.x += delta.x
-                predicted.y += delta.y
+                predicted.x += delta.x * settings.worldScale
+                predicted.y += delta.y * settings.worldScale
                 lastAppliedStepCount = pdr.stepCount
                 log.debug("PDR: Step delta: \(delta.x), \(delta.y)")
-            }
+            }/*
+            if let delta = pdr.consumeStepDelta() {
+                predicted.x += delta.x
+                predicted.y += delta.y
+                log.debug("PDR: Step delta: \(delta.x), \(delta.y)")
+            }*/
         }
-        
-        let recentDevices = settings.isBLEPositioningEnabled ? recentBLEDevices() : []
+
+        let recentDevices =
+            settings.isBLEPositioningEnabled ? recentBLEDevices() : []
         // --- BLE correction ---
         if !recentDevices.isEmpty {
             //let recentDevices = recentBLEDevices()
-            
+
             let txPower = settings.rssiReferencePower
             let pathLoss = settings.pathLossExponent
 
-            if let result = PositionCalculator.calculate(devices: recentDevices, txPower: txPower, pathLossExponent: pathLoss) {
+            if let result = PositionCalculator.calculate(
+                devices: recentDevices, txPower: txPower,
+                pathLossExponent: pathLoss)
+            {
                 let blePos = result.position
                 let confidence = result.confidence
                 //log.info("Confidence: \(confidence), Position: \(blePos.x), \(blePos.y)")
                 // Save for optional debugging
                 lastBLEPosition = blePos
                 lastBLEConfidence = confidence
-                
-                if fusedPosition == .zero || isBLEJumpReasonable(newBLE: blePos) || (Date().timeIntervalSince(lastFusedPositionUpdateTime) > 3) {
+
+                if fusedPosition == .zero || isBLEJumpReasonable(newBLE: blePos)
+                    || (Date().timeIntervalSince(lastFusedPositionUpdateTime)
+                        > 0.5) // before was 3
+                {
                     if settings.isConfidenceEnabled && false {
                         //let x = blePos.x * confidence + predicted.x * (1 - confidence)
                         //let y = blePos.y * confidence + predicted.y * (1 - confidence)
@@ -212,52 +213,58 @@ final class PositionFusionManager: ObservableObject {
                 }
             }
         }
-        
+
         /// Logic to decide how to update position
         // fusedPosition = predicted or fusedPosition = bLEPredicted or a mix of these
         fusedPosition = bLEPredicted
-        
+        //fusedPosition = predicted
         //log.debug("fusedPosition: \(self.fusedPosition.x), \(self.fusedPosition.y)")
-        log.debug("BLE predicted: \(bLEPredicted.x), \(bLEPredicted.y), PDR predicted: \(predicted.x), \(predicted.y), time: \(Date())")
+        //log.debug("BLE predicted: \(bLEPredicted.x), \(bLEPredicted.y), PDR predicted: \(predicted.x), \(predicted.y), time: \(Date())")
         // --- Fallback to prediction only ---
-        
+
     }
-    
 
     /// Checks if BLE position change is physically possible, based on PDR velocity.
     private func isBLEJumpReasonable(newBLE: CGPoint) -> Bool {
         // Optional helper to reject BLE outliers
         guard let last = fusedPosition as CGPoint? else { return true }
-            
+
         let distance = hypot(newBLE.x - last.x, newBLE.y - last.y)
         let maxDistance: CGFloat = 10
         if distance > maxDistance {
             //log.error("Concluded that BLE jump is not reasonable: \(distance)m")
         }
-        
+
         // Example: allow max 2.5m movement per BLE update
         return distance <= maxDistance
     }
-    
+
     /// Function only for testing
     private func debugBLEVisibility(now: Date) {
         if knownBLEDevices.count > 0 {
             let sortedBeacons = knownBLEDevices.values
-                .sorted { ($0.lastSeen ?? .distantPast) > ($1.lastSeen ?? .distantPast) }
-            
+                .sorted {
+                    ($0.lastSeen ?? .distantPast)
+                        > ($1.lastSeen ?? .distantPast)
+                }
+
             log.debug("🔍 Known beacons (most recent first):")
-            
+
             for beacon in sortedBeacons {
                 guard let seen = beacon.lastSeen else {
-                    log.debug("⚠️ Beacon \(beacon.name) [\(beacon.uuid)] has no lastSeen timestamp.")
+                    log.debug(
+                        "⚠️ Beacon \(beacon.name) [\(beacon.uuid)] has no lastSeen timestamp."
+                    )
                     continue
                 }
-                
+
                 let age = now.timeIntervalSince(seen)
                 let rssi = beacon.rssi
                 let name = beacon.name
-                
-                log.debug("🛰️ \(name) | RSSI: \(rssi) dBm | Seen \(String(format: "%.2f", age))s ago")
+
+                log.debug(
+                    "🛰️ \(name) | RSSI: \(rssi) dBm | Seen \(String(format: "%.2f", age))s ago"
+                )
             }
         } else {
             log.debug("No visible 🛰️")
